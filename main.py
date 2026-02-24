@@ -6,6 +6,7 @@ import gzip
 import requests
 from flask import Flask, request, url_for, session, redirect
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy import Spotify
 from spotipy.cache_handler import FlaskSessionCacheHandler
 
 load_dotenv()
@@ -97,12 +98,16 @@ def compact_tracks(items):
         album = track.get("album") or {}
         images = album.get("images") or []
         img = images[0]["url"] if images else ""
+        id = track.get("id")
+        uri = track.get("uri")
 
         tracks.append(
             {
                 "name": track.get("name"),
                 "artists": [a.get("name") for a in track.get("artists", []) if a.get("name")],
                 "img": img,
+                "id": id,
+                "uri":uri
             }
         )
     return tracks
@@ -138,7 +143,6 @@ def callback():
 
 @app.route("/get_playlists")
 def get_playlists():
-    from spotipy import Spotify
 
     token, auth_url = get_token()
     if not token:
