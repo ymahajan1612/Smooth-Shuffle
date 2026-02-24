@@ -1,5 +1,5 @@
 import os
-from playlist_caching import load_tracks, dump_tracks, PLAYLIST_ITEMS_CACHE
+from caching.playlist_DB_handler import DBHandler
 from spotify_client import get_snapshot_id, fetch_all_playlist_items, compact_tracks
 from spotify_auth import create_spotify_oauth, get_token
 from flask import Flask, request, url_for, session, redirect
@@ -68,33 +68,40 @@ def view():
 
     playlist_id = request.args.get("playlist_id")
     playlist_name = request.args.get("playlist_name", "Playlist")
+    db_client = DBHandler()
 
-    # 1) snapshot-based invalidation
+
     snapshot_id, err = get_snapshot_id(playlist_id, token)
     if err or not snapshot_id:
         return f"<pre>{err}</pre>", 500
 
-    key = (playlist_id, snapshot_id)
 
     # check if the snapshot_id exists in our cache 
-    tracks_gzip = PLAYLIST_ITEMS_CACHE.get(key)
-    if tracks_gzip:
-        tracks = load_tracks(tracks_gzip)
-    else:
+    db_result = db_client.getPlaylist(playlist_id)
+    if db_result:
+        fetched_snapshot_id = db_result[0]
+
+    if not db_result or fetched_snapshot_id != snapshot_id:
         # Fetch from /items
         items, err = fetch_all_playlist_items(playlist_id, token)
         if err:
             status = err.get("error", {}).get("status", 500)
             return f"<h2>{playlist_name}</h2><pre>{err}</pre>", status
-
         tracks = compact_tracks(items)
         # store the playlist contents in cache
-        PLAYLIST_ITEMS_CACHE[key] = dump_tracks(tracks)
+        db_client.insertPlaylist(playlist_id, snapshot_id, tracks)
+    else:
+        tracks = db_result[1]
 
     # render
     songs_html = f"""
     <h2>{playlist_name}</h2>
     <div style="margin-top:15px;"></div>
+    <form action="/smooth" method="POST" style="margin:0;">
+        <input type="hidden" name="playlist_id" value=f"{playlist_id}">
+        <input type="hidden" name="snapshot_id" value=f"{snapshot_id}">
+        <button type="submit">Smooth Shuffle</button>
+    </form>
     """
 
     for t in tracks:
@@ -114,6 +121,16 @@ def view():
 
     return songs_html
 
+@app.route("/smooth", methods=["POST"])
+def smooth():
+    token, auth_url = get_token()
+    if not token:
+        return redirect(auth_url)
+
+    playlist_id = request.form.get("playlist_id")
+    snapshot_id = request.form.get("snapshot_id")
+    
+    return ""
 
 @app.route("/logout")
 def logout():

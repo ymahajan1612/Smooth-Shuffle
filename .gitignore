@@ -1,2 +1,4 @@
 /.env
 .cache
+/__pycache__
+/playlist_cache.db
