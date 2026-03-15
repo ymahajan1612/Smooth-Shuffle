@@ -11,7 +11,7 @@ class DBHandler:
 
     def createConnection(self):
         try:
-            self.conn = sqlite3.connect('data/playlist_cache.db')
+            self.conn = sqlite3.connect('caching/playlist_cache.db')
         except sqlite3.Error as e:
             print("Error establishing connection: ", e)
 
@@ -34,6 +34,16 @@ class DBHandler:
                 Tracks BLOB NOT NULL
                 );
 
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS track_analysis (
+                    track_id TEXT PRIMARY KEY NOT NULL,
+                    tempo REAL NOT NULL,
+                    energy REAL NOT NULL,
+                    danceability REAL NOT NULL,
+                    loudness REAL NOT NULL,
+                    acousticness REAL NOT NULL
+                );
             """)
             self.conn.commit()
         except sqlite3.Error as e:
@@ -87,5 +97,54 @@ class DBHandler:
             self.conn.commit()
         except sqlite3.Error as e:
             self.conn.rollback()
-            
-    
+
+    def insertTrack(self, track_id, track_features):
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO track_analysis (
+                    track_id,
+                    tempo,
+                    energy,
+                    danceability,
+                    loudness,
+                    acousticness
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (track_id, 
+                  track_features['tempo'], 
+                  track_features['energy'], 
+                  track_features['danceability'], 
+                  track_features['loudness'], 
+                  track_features['acousticness']))
+            self.conn.commit()
+            print("track inserted")
+        except sqlite3.Error as e:
+            print("track not inserted")
+            self.conn.rollback()
+            print("Error inserting track features:", e)    
+                
+    def fetchTrackFeatures(self, track_id):
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT tempo, energy, danceability, loudness, acousticness
+                FROM track_analysis
+                WHERE track_id = ?
+            """, (track_id,))
+            row = cursor.fetchone()
+
+            if row:
+                return {
+                    "tempo": row[0],
+                    "energy": row[1],
+                    "danceability": row[2],
+                    "loudness": row[3],
+                    "acousticness": row[4],
+                }
+            return None
+
+        except sqlite3.Error as e:
+            print("Error fetching track features:", e)
+            return None

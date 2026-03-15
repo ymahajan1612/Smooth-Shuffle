@@ -2,8 +2,10 @@ import os
 from caching.playlist_DB_handler import DBHandler
 from spotify_client import get_snapshot_id, fetch_all_playlist_items, compact_tracks
 from spotify_auth import create_spotify_oauth, get_token
+from audio_features import getSongFeatures, smoothShuffleFeatures
 from flask import Flask, request, url_for, session, redirect
 from spotipy import Spotify
+from time import sleep
 
 
 app = Flask(__name__)
@@ -85,25 +87,22 @@ def view():
         # Fetch from /items
         items, err = fetch_all_playlist_items(playlist_id, token)
         if err:
-            status = err.get("error", {}).get("status", 500)
-            return f"<h2>{playlist_name}</h2><pre>{err}</pre>", status
+            return f"<h2>{playlist_name}</h2><pre>{err}</pre>"
         tracks = compact_tracks(items)
         # store the playlist contents in cache
         db_client.insertPlaylist(playlist_id, snapshot_id, tracks)
     else:
         tracks = db_result[1]
-
+    db_client.closeConnection()
     # render
     songs_html = f"""
     <h2>{playlist_name}</h2>
     <div style="margin-top:15px;"></div>
     <form action="/smooth" method="POST" style="margin:0;">
-        <input type="hidden" name="playlist_id" value=f"{playlist_id}">
-        <input type="hidden" name="snapshot_id" value=f"{snapshot_id}">
+        <input type="hidden" name="playlist_id" value="{playlist_id}">
         <button type="submit">Smooth Shuffle</button>
     </form>
     """
-
     for t in tracks:
         artists_str = ", ".join(t.get("artists", []))
         img = t.get("img", "")
@@ -128,7 +127,33 @@ def smooth():
         return redirect(auth_url)
 
     playlist_id = request.form.get("playlist_id")
-    snapshot_id = request.form.get("snapshot_id")
+    db_client = DBHandler()
+    db_result = db_client.getPlaylist(playlist_id)
+    tracks = db_result[1]
+
+    track_feature_list = []
+
+    db_client = DBHandler()
+
+    for track in tracks:
+        track_id = track['id']
+        track_name = track['name']
+        # check if track is already cached
+        db_result = db_client.fetchTrackFeatures(track_id)
+        if db_result:
+            track_features = db_result
+            track_features['name'] = track_name
+            track_features['id'] = track_id
+        else:
+            track_features = smoothShuffleFeatures(getSongFeatures(track_id))
+            db_client.insertTrack(track_id, track_features)
+            track_features['name'] = track_name
+            track_features['id'] = track_id
+            sleep(1.05)
+        track_feature_list.append(track_features)
+    
+    
+
     
     return ""
 
